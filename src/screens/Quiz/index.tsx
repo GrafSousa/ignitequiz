@@ -9,7 +9,9 @@ import Animated, {
   useSharedValue,
   withSequence,
   withTiming,
+  runOnJS,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { styles } from './styles';
@@ -31,6 +33,9 @@ interface Params {
 
 type QuizProps = (typeof QUIZ)[0];
 
+const CARD_INCLINATION = 10;
+const CARD_SKIP_AREA = -200;
+
 export function Quiz() {
   const [points, setPoints] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,6 +44,11 @@ export function Quiz() {
   const [alternativeSelected, setAlternativeSelected] = useState<null | number>(
     null
   );
+
+  const { navigate } = useNavigation();
+
+  const route = useRoute();
+  const { id } = route.params as Params;
 
   const shake = useSharedValue(0);
   const shakeStyleAnimated = useAnimatedStyle(() => {
@@ -60,6 +70,18 @@ export function Quiz() {
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
     },
+  });
+
+  const cardPosition = useSharedValue(0);
+  const dragStyles = useAnimatedStyle(() => {
+    const rotateZ = cardPosition.value / CARD_INCLINATION;
+
+    return {
+      transform: [
+        { translateX: cardPosition.value },
+        { rotateZ: `${rotateZ}deg` },
+      ],
+    };
   });
 
   const headerStyles = useAnimatedStyle(() => {
@@ -89,11 +111,6 @@ export function Quiz() {
       ],
     };
   });
-
-  const { navigate } = useNavigation();
-
-  const route = useRoute();
-  const { id } = route.params as Params;
 
   function handleSkipConfirm() {
     Alert.alert('Pular', 'Deseja realmente pular a questão?', [
@@ -162,6 +179,23 @@ export function Quiz() {
     );
   }
 
+  const onPan = Gesture.Pan()
+    .activateAfterLongPress(200)
+    .onUpdate((event) => {
+      const moveToLeft = event.translationX < 0;
+
+      if (moveToLeft) {
+        cardPosition.value = event.translationX;
+      }
+    })
+    .onEnd((event) => {
+      if (event.translationX < CARD_SKIP_AREA) {
+        runOnJS(handleSkipConfirm)();
+      }
+
+      cardPosition.value = withTiming(0);
+    });
+
   useEffect(() => {
     const quizSelected = QUIZ.filter((item) => item.id === id)[0];
     setQuiz(quizSelected);
@@ -202,14 +236,16 @@ export function Quiz() {
           />
         </Animated.View>
 
-        <Animated.View style={shakeStyleAnimated}>
-          <Question
-            key={quiz.questions[currentQuestion].title}
-            question={quiz.questions[currentQuestion]}
-            alternativeSelected={alternativeSelected}
-            setAlternativeSelected={setAlternativeSelected}
-          />
-        </Animated.View>
+        <GestureDetector gesture={onPan}>
+          <Animated.View style={[shakeStyleAnimated, dragStyles]}>
+            <Question
+              key={quiz.questions[currentQuestion].title}
+              question={quiz.questions[currentQuestion]}
+              alternativeSelected={alternativeSelected}
+              setAlternativeSelected={setAlternativeSelected}
+            />
+          </Animated.View>
+        </GestureDetector>
 
         <View style={styles.footer}>
           <OutlineButton title='Parar' onPress={handleStop} />
